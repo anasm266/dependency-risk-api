@@ -12,7 +12,7 @@
   },
   "scripts": {
     "build": "tsc -b",
-    "migrate": "tsx src/migrate.ts",
+    "migrate": "tsx --conditions=source src/migrate.ts",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run"
   },

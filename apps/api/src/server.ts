@@ -419,7 +419,7 @@ export async function buildApp(
       userId: user.id,
       repoId,
       source: "manual",
-      commitSha: body.commitSha ?? null,
+      commitSha: body.commitSha ?? repo.defaultBranch,
     };
     if (body.reason) {
       scanInput.reason = body.reason;

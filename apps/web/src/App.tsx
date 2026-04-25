@@ -129,6 +129,9 @@ export function App() {
       const result = await startScan(activeRepo.id);
       setScan(result.scan);
       await refreshAll();
+      window.setTimeout(() => {
+        void refreshAll();
+      }, 3500);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -294,7 +297,10 @@ export function App() {
                 <div className="scan">
                   <Row label="status" value={<Status value={scan.status} />} />
                   <Row label="source" value={scan.source} />
-                  <Row label="commit" value={scan.commitSha ?? "none"} />
+                  <Row
+                    label="commit"
+                    value={scan.commitSha ?? "default branch"}
+                  />
                   <Row label="findings" value={String(findings.length)} />
                 </div>
               ) : (

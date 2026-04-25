@@ -10,6 +10,7 @@ import {
 import type {
   AuditLog,
   Finding,
+  FindingGroup,
   Policy,
   Repo,
   Scan,
@@ -50,6 +51,10 @@ export function App() {
   const activeRepo = useMemo(
     () => repos.find((repo) => repo.id === activeRepoId) ?? repos[0] ?? null,
     [activeRepoId, repos],
+  );
+  const findingGroups = useMemo(
+    () => groupDashboardFindings(findings),
+    [findings],
   );
 
   useEffect(() => {
@@ -301,7 +306,7 @@ export function App() {
                     label="commit"
                     value={scan.commitSha ?? "default branch"}
                   />
-                  <Row label="findings" value={String(findings.length)} />
+                  <Row label="findings" value={String(findingGroups.length)} />
                 </div>
               ) : (
                 <p className="muted">no scans yet</p>
@@ -313,12 +318,12 @@ export function App() {
             <Header icon={<Activity size={17} />} title="findings" />
             <Table
               empty="no findings"
-              headers={["severity", "rule", "package", "title"]}
-              rows={findings.map((finding) => [
-                finding.severity,
-                finding.ruleId,
-                `${finding.packageName}${finding.packageVersion ? `@${finding.packageVersion}` : ""}`,
-                finding.title,
+              headers={["severity", "package", "path", "reasons"]}
+              rows={findingGroups.map((group) => [
+                group.severity,
+                formatPackage(group),
+                group.packagePath,
+                group.reasons.join(", "),
               ])}
             />
           </section>
@@ -397,7 +402,7 @@ export function App() {
               headers={["action", "repo", "created"]}
               rows={auditLogs.map((log) => [
                 log.action,
-                log.repoId ?? "none",
+                log.repoFullName ?? log.repoId ?? "none",
                 formatTime(log.createdAt),
               ])}
             />
@@ -466,6 +471,150 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 
 function Status({ value }: { value: string }) {
   return <span className={`status ${value}`}>{value}</span>;
+}
+
+function formatPackage(group: FindingGroup) {
+  return `${group.packageName}${group.packageVersion ? `@${group.packageVersion}` : ""}`;
+}
+
+function groupDashboardFindings(findings: Finding[]): FindingGroup[] {
+  const severityRank = { low: 1, medium: 2, high: 3, critical: 4 };
+  const groups = new Map<
+    string,
+    FindingGroup & { seenRuleIds: Set<string>; seenReasons: Set<string> }
+  >();
+
+  for (const finding of findings) {
+    const packageName = cleanPackageName(finding.packageName);
+    const packagePath = displayPackagePath(finding);
+    const packageVersion = finding.packageVersion ?? null;
+    const key = `${packagePath}\0${packageVersion ?? ""}`;
+    const ruleId = displayRuleId(finding);
+    const reason = reasonForRule(ruleId);
+    const existing = groups.get(key);
+    const group =
+      existing ??
+      ({
+        packageName,
+        packagePath,
+        packageVersion,
+        severity: finding.severity,
+        ruleIds: [],
+        reasons: [],
+        evidenceCount: 0,
+        seenRuleIds: new Set<string>(),
+        seenReasons: new Set<string>(),
+      } satisfies FindingGroup & {
+        seenRuleIds: Set<string>;
+        seenReasons: Set<string>;
+      });
+
+    if (severityRank[finding.severity] > severityRank[group.severity]) {
+      group.severity = finding.severity;
+    }
+    group.evidenceCount += 1;
+    if (!group.seenRuleIds.has(ruleId)) {
+      group.ruleIds.push(ruleId);
+      group.seenRuleIds.add(ruleId);
+    }
+    if (!group.seenReasons.has(reason)) {
+      group.reasons.push(reason);
+      group.seenReasons.add(reason);
+    }
+    if (
+      isOptionalPlatformEvidence(finding) &&
+      !group.seenReasons.has("optional platform package")
+    ) {
+      group.reasons.push("optional platform package");
+      group.seenReasons.add("optional platform package");
+    }
+    groups.set(key, group);
+  }
+
+  return [...groups.values()].map(({ seenRuleIds, seenReasons, ...group }) => ({
+    ...group,
+  }));
+}
+
+function displayRuleId(finding: Finding) {
+  if (
+    finding.ruleId === "new_risky_dependency" ||
+    finding.title.toLowerCase().includes("new risky dependency")
+  ) {
+    return "new_risky_dependency";
+  }
+  return finding.ruleId;
+}
+
+function reasonForRule(ruleId: string) {
+  switch (ruleId) {
+    case "lifecycle_script":
+      return "lifecycle script";
+    case "new_risky_dependency":
+      return "new risky dependency";
+    case "secret_read":
+      return "secret read";
+    case "network_egress":
+      return "network egress";
+    case "blast_radius":
+      return "blast radius";
+    default:
+      return ruleId.replaceAll("_", " ");
+  }
+}
+
+function displayPackagePath(finding: Finding) {
+  const path =
+    stringEvidence(finding.evidence["path"]) ??
+    stringEvidence(finding.evidence["packagePath"]) ??
+    stringEvidence(finding.evidence["lockfilePath"]);
+  return stripRootNodeModules(path ?? finding.packageName);
+}
+
+function cleanPackageName(value: string) {
+  const normalized = value.replaceAll("\\", "/");
+  const segments = normalized.split("/").filter(Boolean);
+  const lastNodeModules = segments.lastIndexOf("node_modules");
+  if (lastNodeModules >= 0) {
+    return packageNameFromSegments(segments.slice(lastNodeModules + 1));
+  }
+  const nestedNodeModules = normalized.lastIndexOf("/node_modules/");
+  if (nestedNodeModules >= 0) {
+    return cleanPackageName(normalized.slice(nestedNodeModules + 1));
+  }
+  return packageNameFromSegments(segments);
+}
+
+function packageNameFromSegments(segments: string[]) {
+  const first = segments[0];
+  if (!first) {
+    return "unknown";
+  }
+  if (first.startsWith("@") && segments[1]) {
+    return `${first}/${segments[1]}`;
+  }
+  return first;
+}
+
+function stripRootNodeModules(path: string) {
+  return path.replaceAll("\\", "/").replace(/^node_modules\//, "");
+}
+
+function isOptionalPlatformEvidence(finding: Finding) {
+  return (
+    finding.evidence["optional"] === true &&
+    (hasArrayEvidence(finding.evidence["os"]) ||
+      hasArrayEvidence(finding.evidence["cpu"]) ||
+      cleanPackageName(finding.packageName) === "fsevents")
+  );
+}
+
+function hasArrayEvidence(value: unknown) {
+  return Array.isArray(value) && value.length > 0;
+}
+
+function stringEvidence(value: unknown) {
+  return typeof value === "string" && value ? value : null;
 }
 
 function Table({

@@ -9,7 +9,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import * as tar from "tar";
 import type { ScannerFindingInput } from "@sentinelflow/contracts";
 
@@ -33,6 +33,16 @@ export interface ScannerResult {
 }
 
 export class ScannerUnsupportedError extends Error {}
+
+interface PackageLockEntry {
+  version?: string;
+  hasInstallScript?: boolean;
+  dependencies?: Record<string, string>;
+  optional?: boolean;
+  dev?: boolean;
+  os?: string[];
+  cpu?: string[];
+}
 
 export async function runScanner(
   options: ScannerOptions,
@@ -94,14 +104,7 @@ export async function scanPackageLock(
   const lockPath = join(projectDir, "package-lock.json");
   const raw = await readFile(lockPath, "utf8");
   const lock = JSON.parse(raw) as {
-    packages?: Record<
-      string,
-      {
-        version?: string;
-        hasInstallScript?: boolean;
-        dependencies?: Record<string, string>;
-      }
-    >;
+    packages?: Record<string, PackageLockEntry>;
   };
   const packages = Object.entries(lock.packages ?? {});
   const dependencyCounts = new Map<string, number>();
@@ -116,23 +119,33 @@ export async function scanPackageLock(
     if (!path.startsWith("node_modules/")) {
       continue;
     }
-    const packageName = path.replace(/^node_modules\//, "");
+    const packageName = packageNameFromLockPath(path);
+    const packagePath = displayPackagePath(path);
+    const packageEvidence = packageMetadataEvidence(path, pkg);
     if (pkg.hasInstallScript) {
       findings.push({
         ruleId: "lifecycle_script",
         packageName,
+        packagePath,
         packageVersion: pkg.version ?? null,
-        evidence: { path, source: "package-lock.hasInstallScript" },
+        evidence: {
+          ...packageEvidence,
+          source: "package-lock.hasInstallScript",
+        },
+        isOptional: Boolean(pkg.optional),
+        isDev: Boolean(pkg.dev),
+        isPlatformSpecific: isPlatformSpecificPackage(packageName, pkg),
         isNewPackage: true,
       });
     }
-    const blastRadius = dependencyCounts.get(basename(packageName)) ?? 0;
+    const blastRadius = dependencyCounts.get(packageName) ?? 0;
     if (blastRadius > 0) {
       findings.push({
         ruleId: "blast_radius",
         packageName,
+        packagePath,
         packageVersion: pkg.version ?? null,
-        evidence: { path, dependentCount: blastRadius },
+        evidence: { ...packageEvidence, dependentCount: blastRadius },
         blastRadius,
       });
     }
@@ -301,6 +314,7 @@ function mergeFindings(findings: ScannerFindingInput[]) {
     const key = [
       finding.ruleId,
       finding.packageName,
+      finding.packagePath ?? finding.evidence["path"] ?? "",
       finding.packageVersion ?? "",
       JSON.stringify(finding.evidence),
     ].join("\0");
@@ -310,6 +324,51 @@ function mergeFindings(findings: ScannerFindingInput[]) {
     seen.add(key);
     return true;
   });
+}
+
+function packageMetadataEvidence(path: string, pkg: PackageLockEntry) {
+  const evidence: Record<string, unknown> = {
+    path: displayPackagePath(path),
+    lockfilePath: path,
+    optional: Boolean(pkg.optional),
+    dev: Boolean(pkg.dev),
+  };
+  if (pkg.os?.length) {
+    evidence["os"] = pkg.os;
+  }
+  if (pkg.cpu?.length) {
+    evidence["cpu"] = pkg.cpu;
+  }
+  return evidence;
+}
+
+function displayPackagePath(path: string): string {
+  return path.replaceAll("\\", "/").replace(/^node_modules\//, "");
+}
+
+function packageNameFromLockPath(path: string): string {
+  const segments = path.replaceAll("\\", "/").split("/").filter(Boolean);
+  const lastNodeModules = segments.lastIndexOf("node_modules");
+  const packageSegments =
+    lastNodeModules >= 0 ? segments.slice(lastNodeModules + 1) : segments;
+  const first = packageSegments[0];
+  if (!first) {
+    return "unknown";
+  }
+  if (first.startsWith("@") && packageSegments[1]) {
+    return `${first}/${packageSegments[1]}`;
+  }
+  return first;
+}
+
+function isPlatformSpecificPackage(
+  packageName: string,
+  pkg: PackageLockEntry,
+): boolean {
+  return Boolean(
+    pkg.optional &&
+    (packageName === "fsevents" || pkg.os?.length || pkg.cpu?.length),
+  );
 }
 
 function extractPackageCount(output: string) {

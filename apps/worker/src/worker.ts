@@ -1,5 +1,6 @@
 import {
   evaluatePolicy,
+  groupFindings,
   highestSeverity,
   signHmacSha256,
   type ScannerFindingInput,
@@ -110,6 +111,7 @@ async function processScanJob(job: JobRecord, deps: WorkerDeps) {
     const result = await scanner(scannerOptions);
     const policy = await deps.store.getPolicy(repo.id);
     const findings = evaluatePolicy(policy, result.findings);
+    const findingGroups = groupFindings(findings);
     await deps.store.finishScan({
       scanId,
       status: findings.length ? "failed" : "succeeded",
@@ -125,7 +127,7 @@ async function processScanJob(job: JobRecord, deps: WorkerDeps) {
         commitSha: job.payload["commitSha"],
         conclusion: findings.length ? "failure" : "success",
         highestSeverity: highestSeverity(findings),
-        findingCount: findings.length,
+        findingCount: findingGroups.length,
       },
     });
   } catch (error) {

@@ -28,6 +28,12 @@ describe("MemoryStore", () => {
     const claimed = await store.claimJob("worker-1", ["manual_scan"]);
     expect(claimed?.id).toBe(first.job.id);
     expect(await store.claimJob("worker-2", ["manual_scan"])).toBeNull();
+
+    const logs = await store.listAuditLogs(user.id, { limit: 10 });
+    expect(logs.items[0]).toMatchObject({
+      action: "scan.queued",
+      repoFullName: repo!.fullName,
+    });
   });
 
   it("persists scan findings and queues webhook deliveries", async () => {

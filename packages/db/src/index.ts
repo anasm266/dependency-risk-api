@@ -498,7 +498,13 @@ export class MemoryStore implements SentinelStore {
   }
 
   async listAuditLogs(_userId: string, options: ListOptions) {
-    return pageItems(this.auditLogs, options.limit, options.cursor);
+    const enriched = this.auditLogs.map((log) => ({
+      ...log,
+      repoFullName: log.repoId
+        ? (this.repos.get(log.repoId)?.fullName ?? null)
+        : null,
+    }));
+    return pageItems(enriched, options.limit, options.cursor);
   }
 
   async createWebhookEndpoint(input: {
@@ -1165,7 +1171,11 @@ export class PostgresStore implements SentinelStore {
 
   async listAuditLogs(_userId: string, options: ListOptions) {
     const result = await this.pool.query(
-      "select * from audit_logs order by created_at desc limit $1",
+      `select al.*, r.full_name as repo_full_name
+       from audit_logs al
+       left join repos r on r.id = al.repo_id
+       order by al.created_at desc
+       limit $1`,
       [options.limit],
     );
     return {
@@ -1617,6 +1627,7 @@ function mapAuditLog(row: Record<string, unknown>): AuditLog {
     id: String(row["id"]),
     actorUserId: nullableString(row["actor_user_id"]),
     repoId: nullableString(row["repo_id"]),
+    repoFullName: nullableString(row["repo_full_name"]),
     action: String(row["action"]),
     metadata: asRecord(row["metadata"]),
     createdAt: toIso(row["created_at"]),

@@ -67,6 +67,16 @@ describeIfDatabase("PostgresStore integration", () => {
       expect(findings).toHaveLength(1);
       expect(findings[0]?.severity).toBe("critical");
 
+      const auditLogs = await store.listAuditLogs(user.id, { limit: 25 });
+      expect(
+        auditLogs.items.some(
+          (log) =>
+            log.action === "scan.queued" &&
+            log.repoId === repo.id &&
+            log.repoFullName === repo.fullName,
+        ),
+      ).toBe(true);
+
       const deliveries = await store.listWebhookDeliveries(user.id);
       expect(deliveries.length).toBeGreaterThan(0);
       const work = await store.getWebhookDeliveryWork(deliveries[0]!.id);

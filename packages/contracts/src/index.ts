@@ -78,6 +78,7 @@ export const auditLogSchema = z.object({
   id: z.string().uuid(),
   actorUserId: z.string().uuid().nullable(),
   repoId: z.string().uuid().nullable(),
+  repoFullName: z.string().nullable().optional(),
   action: z.string(),
   metadata: z.record(z.unknown()),
   createdAt: z.string(),
@@ -139,9 +140,13 @@ export interface ProblemJson {
 export interface ScannerFindingInput {
   ruleId: string;
   packageName: string;
+  packagePath?: string | null;
   packageVersion?: string | null;
   evidence: Record<string, unknown>;
   blastRadius?: number;
+  isOptional?: boolean;
+  isDev?: boolean;
+  isPlatformSpecific?: boolean;
   isNewPackage?: boolean;
 }
 
@@ -149,6 +154,17 @@ export interface PolicyFinding extends ScannerFindingInput {
   severity: Severity;
   title: string;
 }
+
+export const findingGroupSchema = z.object({
+  packageName: z.string(),
+  packagePath: z.string(),
+  packageVersion: z.string().nullable(),
+  severity: severitySchema,
+  ruleIds: z.array(z.string()),
+  reasons: z.array(z.string()),
+  evidenceCount: z.number().int().min(0),
+});
+export type FindingGroup = z.infer<typeof findingGroupSchema>;
 
 const severityRank: Record<Severity, number> = {
   low: 1,
@@ -179,7 +195,7 @@ export function evaluatePolicy(
     if (finding.ruleId === "lifecycle_script" && policy.blockLifecycleScripts) {
       findings.push({
         ...finding,
-        severity: "high",
+        severity: isOptionalPlatformFinding(finding) ? "medium" : "high",
         title: `${finding.packageName} runs npm lifecycle scripts`,
       });
     }
@@ -224,13 +240,89 @@ export function evaluatePolicy(
     ) {
       findings.push({
         ...finding,
+        ruleId: "new_risky_dependency",
         severity: "medium",
         title: `${finding.packageName} is a new risky dependency`,
+        evidence: {
+          ...finding.evidence,
+          sourceRuleId: finding.ruleId,
+          reason: "requireApprovalForNewRiskyPackages",
+        },
       });
     }
   }
 
   return dedupePolicyFindings(findings);
+}
+
+export function groupFindings(
+  findings: Array<{
+    severity: Severity;
+    ruleId: string;
+    packageName: string;
+    packageVersion?: string | null;
+    title?: string;
+    evidence: Record<string, unknown>;
+  }>,
+): FindingGroup[] {
+  const groups = new Map<
+    string,
+    FindingGroup & { seenRuleIds: Set<string>; seenReasons: Set<string> }
+  >();
+
+  for (const finding of findings) {
+    const packageName = cleanPackageName(finding.packageName);
+    const packagePath = displayPackagePath(finding);
+    const packageVersion = finding.packageVersion ?? null;
+    const key = `${packagePath}\0${packageVersion ?? ""}`;
+    const ruleId = displayRuleId(finding);
+    const reason = reasonForRule(ruleId);
+    const existing = groups.get(key);
+    const group =
+      existing ??
+      ({
+        packageName,
+        packagePath,
+        packageVersion,
+        severity: finding.severity,
+        ruleIds: [],
+        reasons: [],
+        evidenceCount: 0,
+        seenRuleIds: new Set<string>(),
+        seenReasons: new Set<string>(),
+      } satisfies FindingGroup & {
+        seenRuleIds: Set<string>;
+        seenReasons: Set<string>;
+      });
+
+    group.severity = highestSeverity([
+      { severity: group.severity },
+      { severity: finding.severity },
+    ])!;
+    group.evidenceCount += 1;
+
+    if (!group.seenRuleIds.has(ruleId)) {
+      group.ruleIds.push(ruleId);
+      group.seenRuleIds.add(ruleId);
+    }
+    if (!group.seenReasons.has(reason)) {
+      group.reasons.push(reason);
+      group.seenReasons.add(reason);
+    }
+    if (
+      isOptionalPlatformEvidence(finding) &&
+      !group.seenReasons.has("optional platform package")
+    ) {
+      group.reasons.push("optional platform package");
+      group.seenReasons.add("optional platform package");
+    }
+
+    groups.set(key, group);
+  }
+
+  return [...groups.values()].map(({ seenRuleIds, seenReasons, ...group }) => ({
+    ...group,
+  }));
 }
 
 function dedupePolicyFindings(findings: PolicyFinding[]): PolicyFinding[] {
@@ -239,6 +331,7 @@ function dedupePolicyFindings(findings: PolicyFinding[]): PolicyFinding[] {
     const key = [
       finding.ruleId,
       finding.packageName,
+      finding.packagePath ?? finding.evidence["path"] ?? "",
       finding.packageVersion ?? "",
       finding.title,
     ].join("\0");
@@ -248,6 +341,103 @@ function dedupePolicyFindings(findings: PolicyFinding[]): PolicyFinding[] {
     seen.add(key);
     return true;
   });
+}
+
+function isOptionalPlatformFinding(finding: ScannerFindingInput): boolean {
+  return (
+    (finding.isOptional === true || finding.evidence["optional"] === true) &&
+    (finding.isPlatformSpecific === true ||
+      hasArrayEvidence(finding.evidence["os"]) ||
+      hasArrayEvidence(finding.evidence["cpu"]) ||
+      cleanPackageName(finding.packageName) === "fsevents")
+  );
+}
+
+function isOptionalPlatformEvidence(finding: {
+  packageName: string;
+  evidence: Record<string, unknown>;
+}): boolean {
+  return (
+    finding.evidence["optional"] === true &&
+    (hasArrayEvidence(finding.evidence["os"]) ||
+      hasArrayEvidence(finding.evidence["cpu"]) ||
+      cleanPackageName(finding.packageName) === "fsevents")
+  );
+}
+
+function hasArrayEvidence(value: unknown): boolean {
+  return Array.isArray(value) && value.length > 0;
+}
+
+function displayRuleId(finding: { ruleId: string; title?: string }): string {
+  if (
+    finding.ruleId === "new_risky_dependency" ||
+    finding.title?.toLowerCase().includes("new risky dependency")
+  ) {
+    return "new_risky_dependency";
+  }
+  return finding.ruleId;
+}
+
+function reasonForRule(ruleId: string): string {
+  switch (ruleId) {
+    case "lifecycle_script":
+      return "lifecycle script";
+    case "new_risky_dependency":
+      return "new risky dependency";
+    case "secret_read":
+      return "secret read";
+    case "network_egress":
+      return "network egress";
+    case "blast_radius":
+      return "blast radius";
+    default:
+      return ruleId.replaceAll("_", " ");
+  }
+}
+
+function displayPackagePath(finding: {
+  packageName: string;
+  evidence: Record<string, unknown>;
+}): string {
+  const path =
+    stringEvidence(finding.evidence["path"]) ??
+    stringEvidence(finding.evidence["packagePath"]) ??
+    stringEvidence(finding.evidence["lockfilePath"]);
+  return stripRootNodeModules(path ?? finding.packageName);
+}
+
+function cleanPackageName(value: string): string {
+  const normalized = value.replaceAll("\\", "/");
+  const segments = normalized.split("/").filter(Boolean);
+  const lastNodeModules = segments.lastIndexOf("node_modules");
+  if (lastNodeModules >= 0) {
+    return packageNameFromSegments(segments.slice(lastNodeModules + 1));
+  }
+  const nestedNodeModules = normalized.lastIndexOf("/node_modules/");
+  if (nestedNodeModules >= 0) {
+    return cleanPackageName(normalized.slice(nestedNodeModules + 1));
+  }
+  return packageNameFromSegments(segments);
+}
+
+function packageNameFromSegments(segments: string[]): string {
+  const first = segments[0];
+  if (!first) {
+    return "unknown";
+  }
+  if (first.startsWith("@") && segments[1]) {
+    return `${first}/${segments[1]}`;
+  }
+  return first;
+}
+
+function stripRootNodeModules(path: string): string {
+  return path.replaceAll("\\", "/").replace(/^node_modules\//, "");
+}
+
+function stringEvidence(value: unknown): string | null {
+  return typeof value === "string" && value ? value : null;
 }
 
 export function encodeCursor(value: string): string {

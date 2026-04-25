@@ -4,6 +4,7 @@ import {
   defaultPolicy,
   encodeCursor,
   evaluatePolicy,
+  groupFindings,
   highestSeverity,
   pageItems,
   problem,
@@ -53,6 +54,84 @@ describe("contracts helpers", () => {
       "network_egress",
     );
     expect(highestSeverity(findings)).toBe("critical");
+  });
+
+  it("keeps normal lifecycle scripts high severity", () => {
+    const findings = evaluatePolicy(defaultPolicy, [
+      {
+        ruleId: "lifecycle_script",
+        packageName: "bad-pkg",
+        packageVersion: "1.0.0",
+        evidence: { path: "bad-pkg" },
+      },
+    ]);
+
+    expect(findings[0]).toMatchObject({
+      ruleId: "lifecycle_script",
+      severity: "high",
+    });
+  });
+
+  it("treats optional platform lifecycle scripts as medium severity", () => {
+    const findings = evaluatePolicy(defaultPolicy, [
+      {
+        ruleId: "lifecycle_script",
+        packageName: "fsevents",
+        packagePath: "vitest/node_modules/fsevents",
+        packageVersion: "2.3.3",
+        evidence: {
+          path: "vitest/node_modules/fsevents",
+          optional: true,
+          os: ["darwin"],
+        },
+        isOptional: true,
+        isPlatformSpecific: true,
+        isNewPackage: true,
+      },
+    ]);
+    const lifecycle = findings.find(
+      (finding) => finding.ruleId === "lifecycle_script",
+    );
+
+    expect(lifecycle?.severity).toBe("medium");
+  });
+
+  it("groups raw policy evidence into one dashboard finding row", () => {
+    const findings = evaluatePolicy(defaultPolicy, [
+      {
+        ruleId: "lifecycle_script",
+        packageName: "fsevents",
+        packagePath: "vitest/node_modules/fsevents",
+        packageVersion: "2.3.3",
+        evidence: {
+          path: "vitest/node_modules/fsevents",
+          optional: true,
+          os: ["darwin"],
+        },
+        isOptional: true,
+        isPlatformSpecific: true,
+        isNewPackage: true,
+      },
+    ]);
+
+    const groups = groupFindings(findings);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({
+      packageName: "fsevents",
+      packagePath: "vitest/node_modules/fsevents",
+      packageVersion: "2.3.3",
+      severity: "medium",
+    });
+    expect(groups[0]?.ruleIds).toEqual([
+      "lifecycle_script",
+      "new_risky_dependency",
+    ]);
+    expect(groups[0]?.reasons).toEqual([
+      "lifecycle script",
+      "optional platform package",
+      "new risky dependency",
+    ]);
   });
 
   it("uses timing-safe sha256 HMAC signatures", () => {

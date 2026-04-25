@@ -20,6 +20,7 @@ describe("worker", () => {
         scanRepoAllowlist: new Set([repo.fullName]),
         scannerTimeoutMs: 100,
         scannerMaxOutputBytes: 1000,
+        publicAppUrl: "http://localhost:5173",
       },
       scanner: async () => ({
         findings: [

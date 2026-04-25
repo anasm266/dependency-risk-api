@@ -284,6 +284,19 @@ export async function buildApp(
       login: profile.login,
       avatarUrl: profile.avatar_url ?? null,
     });
+    const user = await store.getUserBySession(session.id);
+    if (user) {
+      for (const fullName of config.scanRepoAllowlist) {
+        await store.upsertRepo({
+          fullName,
+          defaultBranch: fullName.endsWith("/installsentry")
+            ? "master"
+            : "main",
+          private: false,
+          userId: user.id,
+        });
+      }
+    }
     setSessionCookie(reply, session.id, config);
     return reply.redirect(config.publicAppUrl);
   });

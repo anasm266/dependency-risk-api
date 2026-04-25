@@ -4,6 +4,7 @@ import {
   signHmacSha256,
   type ScannerFindingInput,
 } from "@sentinelflow/contracts";
+import { createSign } from "node:crypto";
 import type { JobRecord, SentinelStore } from "@sentinelflow/db";
 import {
   runScanner,
@@ -18,6 +19,9 @@ export interface WorkerConfig {
   scannerMaxOutputBytes: number;
   scannerFixtureDir?: string | undefined;
   githubToken?: string | undefined;
+  githubAppId?: string | undefined;
+  githubAppPrivateKey?: string | undefined;
+  publicAppUrl: string;
 }
 
 export interface WorkerDeps {
@@ -65,7 +69,7 @@ export async function processJob(
     return;
   }
   if (job.type === "github_check_update") {
-    // GitHub App check-run mutation is intentionally isolated for credentialed deployment.
+    await processGitHubCheckUpdate(job, deps);
     return;
   }
   throw new Error(`unknown job type: ${job.type}`);
@@ -115,7 +119,10 @@ async function processScanJob(job: JobRecord, deps: WorkerDeps) {
       type: "github_check_update",
       payload: {
         scanId,
+        userId,
         repoFullName: repo.fullName,
+        installationId: repo.installationId,
+        commitSha: job.payload["commitSha"],
         conclusion: findings.length ? "failure" : "success",
         highestSeverity: highestSeverity(findings),
         findingCount: findings.length,
@@ -176,6 +183,77 @@ async function processWebhookDelivery(job: JobRecord, deps: WorkerDeps) {
   }
 }
 
+async function processGitHubCheckUpdate(job: JobRecord, deps: WorkerDeps) {
+  if (!deps.config.githubAppId || !deps.config.githubAppPrivateKey) {
+    return;
+  }
+  const repoFullName = requireString(
+    job.payload["repoFullName"],
+    "repoFullName",
+  );
+  const installationId = requireString(
+    job.payload["installationId"],
+    "installationId",
+  );
+  const commitSha = requireString(job.payload["commitSha"], "commitSha");
+  const scanId =
+    typeof job.payload["scanId"] === "string" ? job.payload["scanId"] : null;
+  const conclusion = normalizeConclusion(job.payload["conclusion"]);
+  const findingCount = Number(job.payload["findingCount"] ?? 0);
+  const highestSeverity =
+    typeof job.payload["highestSeverity"] === "string"
+      ? job.payload["highestSeverity"]
+      : "none";
+  const [owner, repo] = repoFullName.split("/");
+  if (!owner || !repo) {
+    throw new Error(`invalid repo full name: ${repoFullName}`);
+  }
+
+  const token = await createInstallationToken({
+    appId: deps.config.githubAppId,
+    privateKey: deps.config.githubAppPrivateKey,
+    installationId,
+  });
+  const detailsUrl = scanId
+    ? `${deps.config.publicAppUrl.replace(/\/$/, "")}/?scan=${encodeURIComponent(scanId)}`
+    : deps.config.publicAppUrl;
+  const response = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/check-runs`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        accept: "application/vnd.github+json",
+        "content-type": "application/json",
+        "x-github-api-version": "2022-11-28",
+        "user-agent": "SentinelFlow/0.1",
+      },
+      body: JSON.stringify({
+        name: "SentinelFlow dependency policy",
+        head_sha: commitSha,
+        status: "completed",
+        conclusion,
+        details_url: detailsUrl,
+        output: {
+          title:
+            conclusion === "success"
+              ? "Dependency policy passed"
+              : "Dependency policy needs review",
+          summary:
+            conclusion === "success"
+              ? "SentinelFlow did not find policy-blocking npm install risk."
+              : `SentinelFlow found ${findingCount} policy finding(s). Highest severity: ${highestSeverity}.`,
+        },
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `GitHub check-run update failed with ${response.status}: ${await response.text()}`,
+    );
+  }
+}
+
 export function loadWorkerConfig(env = process.env): WorkerConfig {
   return {
     workerId: env["WORKER_ID"] ?? `worker-${process.pid}`,
@@ -195,7 +273,72 @@ export function loadWorkerConfig(env = process.env): WorkerConfig {
     ),
     scannerFixtureDir: env["SCANNER_FIXTURE_DIR"],
     githubToken: env["GITHUB_TOKEN"],
+    githubAppId: env["GITHUB_APP_ID"],
+    githubAppPrivateKey: normalizePrivateKey(env["GITHUB_APP_PRIVATE_KEY"]),
+    publicAppUrl:
+      env["PUBLIC_APP_URL"] ?? env["API_BASE_URL"] ?? "http://localhost:5173",
   };
+}
+
+async function createInstallationToken(input: {
+  appId: string;
+  privateKey: string;
+  installationId: string;
+}) {
+  const jwt = createGitHubAppJwt(input.appId, input.privateKey);
+  const response = await fetch(
+    `https://api.github.com/app/installations/${input.installationId}/access_tokens`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${jwt}`,
+        accept: "application/vnd.github+json",
+        "x-github-api-version": "2022-11-28",
+        "user-agent": "SentinelFlow/0.1",
+      },
+    },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `GitHub installation token failed with ${response.status}: ${await response.text()}`,
+    );
+  }
+  const body = (await response.json()) as { token?: string };
+  if (!body.token) {
+    throw new Error("GitHub installation token response did not include token");
+  }
+  return body.token;
+}
+
+function createGitHubAppJwt(appId: string, privateKey: string) {
+  const now = Math.floor(Date.now() / 1000);
+  const header = Buffer.from(
+    JSON.stringify({ alg: "RS256", typ: "JWT" }),
+  ).toString("base64url");
+  const payload = Buffer.from(
+    JSON.stringify({
+      iat: now - 60,
+      exp: now + 9 * 60,
+      iss: appId,
+    }),
+  ).toString("base64url");
+  const data = `${header}.${payload}`;
+  const signature = createSign("RSA-SHA256")
+    .update(data)
+    .sign(privateKey, "base64url");
+  return `${data}.${signature}`;
+}
+
+function normalizePrivateKey(value: string | undefined) {
+  return value?.replace(/\\n/g, "\n").trim();
+}
+
+function normalizeConclusion(
+  value: unknown,
+): "success" | "failure" | "neutral" {
+  return value === "success" || value === "failure" || value === "neutral"
+    ? value
+    : "neutral";
 }
 
 function requireString(value: unknown, name: string): string {

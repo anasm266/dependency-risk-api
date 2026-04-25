@@ -4,13 +4,14 @@ services:
     runtime: node
     plan: free
     buildCommand: npm ci && npm run build
-    preDeployCommand: npm run db:migrate
     startCommand: node apps/api/dist/index.js
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
         value: production
       - key: RUN_WORKER_IN_API
+        value: true
+      - key: MIGRATE_ON_STARTUP
         value: true
       - key: DATABASE_URL
         sync: false

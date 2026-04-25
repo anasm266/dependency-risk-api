@@ -12,6 +12,7 @@ export interface ApiConfig {
   scanRepoAllowlist: Set<string>;
   metricsToken: string | null;
   runWorkerInApi: boolean;
+  migrateOnStartup: boolean;
 }
 
 export function loadConfig(env = process.env): ApiConfig {
@@ -35,5 +36,6 @@ export function loadConfig(env = process.env): ApiConfig {
     ),
     metricsToken: env["METRICS_TOKEN"] ?? null,
     runWorkerInApi: env["RUN_WORKER_IN_API"] === "true",
+    migrateOnStartup: env["MIGRATE_ON_STARTUP"] === "true",
   };
 }

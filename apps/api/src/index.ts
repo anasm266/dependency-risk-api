@@ -1,9 +1,18 @@
-import { createStoreFromEnv } from "@sentinelflow/db";
+import { createStoreFromEnv, runMigrations } from "@sentinelflow/db";
 import { loadWorkerConfig, processNextJob } from "@sentinelflow/worker";
 import { loadConfig } from "./config.js";
 import { buildApp } from "./server.js";
 
 const config = loadConfig();
+
+if (config.migrateOnStartup) {
+  const databaseUrl = process.env["DATABASE_URL"];
+  if (!databaseUrl) {
+    throw new Error("DATABASE_URL is required when MIGRATE_ON_STARTUP=true");
+  }
+  await runMigrations(databaseUrl);
+}
+
 const store = await createStoreFromEnv();
 const app = await buildApp({ store, config });
 let workerStopped = false;

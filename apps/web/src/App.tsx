@@ -19,6 +19,7 @@ import type {
 } from "@sentinelflow/contracts";
 import {
   createWebhookEndpoint,
+  demoLogin,
   devLogin,
   getPolicy,
   getScan,
@@ -124,6 +125,20 @@ export function App() {
     }
   }
 
+  async function loginDemo() {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await demoLogin();
+      setUser(result.user);
+      await refreshAll();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function runScan() {
     if (!activeRepo) {
       return;
@@ -197,13 +212,22 @@ export function App() {
             behavior before it lands.
           </p>
           <div className="actions">
-            <a className="button primary" href="/auth/github/start">
+            <button
+              className="button primary"
+              onClick={loginDemo}
+              disabled={busy}
+            >
+              try demo
+            </button>
+            <a className="button" href="/auth/github/start">
               <Github size={16} />
               github sign in
             </a>
-            <button className="button" onClick={loginDev} disabled={busy}>
-              dev login
-            </button>
+            {import.meta.env.DEV && (
+              <button className="button" onClick={loginDev} disabled={busy}>
+                dev login
+              </button>
+            )}
           </div>
           {error && <p className="error">{error}</p>}
         </section>

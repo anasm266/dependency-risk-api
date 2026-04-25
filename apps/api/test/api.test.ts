@@ -25,6 +25,43 @@ async function testApp() {
 }
 
 describe("SentinelFlow API", () => {
+  it("allows public demo login without enabling production dev login", async () => {
+    const store = new MemoryStore();
+    const app = await buildApp({
+      store,
+      config: loadConfig({
+        NODE_ENV: "production",
+        PORT: "0",
+        WEB_ORIGIN: "https://example.com",
+        PUBLIC_APP_URL: "https://example.com",
+        API_BASE_URL: "https://example.com",
+        SESSION_SECRET: "test-session-secret-32-bytes",
+        GITHUB_WEBHOOK_SECRET: "test-webhook-secret",
+      }),
+    });
+    await app.ready();
+
+    const dev = await app.inject({ method: "POST", url: "/auth/dev/login" });
+    const demo = await app.inject({
+      method: "POST",
+      url: "/auth/demo/login",
+    });
+    const cookie = demo.headers["set-cookie"];
+    const repos = await app.inject({
+      method: "GET",
+      url: "/v1/repos",
+      headers: { cookie: Array.isArray(cookie) ? cookie[0] : (cookie ?? "") },
+    });
+
+    expect(dev.statusCode).toBe(404);
+    expect(demo.statusCode).toBe(200);
+    expect(demo.json().user.login).toBe("demo-reviewer");
+    expect(
+      repos.json().items.map((repo: { fullName: string }) => repo.fullName),
+    ).toContain("sentinelflow-demo/risky-npm-app");
+    await app.close();
+  });
+
   it("requires auth for v1 routes and uses problem-json", async () => {
     const { app } = await testApp();
     const response = await app.inject({ method: "GET", url: "/v1/me" });

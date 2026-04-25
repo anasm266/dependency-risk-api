@@ -28,6 +28,8 @@ https://sentinelflow-api.onrender.com/docs
 
 The hosted demo uses a repository allowlist, so scans are limited to configured repositories. This keeps public demo usage controlled while still exercising the real GitHub, PostgreSQL, worker, policy, and webhook paths.
 
+The dashboard includes a `try demo` button. Demo mode creates a limited session with seeded sample repositories, scan results, findings, audit logs, a webhook endpoint, and delivery history. It is intended for reviewers who want to evaluate the product without installing the GitHub App.
+
 ## Why This Exists
 
 Modern npm projects routinely install hundreds or thousands of transitive packages. A package can run code during installation through lifecycle scripts such as `install`, `preinstall`, or `postinstall`. That behavior is legitimate for some packages, but it is also a common path for supply-chain attacks because install scripts execute before application code is ever imported.
@@ -211,6 +213,7 @@ Primary routes:
 | `GET /auth/github/start`                         | Starts GitHub OAuth login.                                                     |
 | `GET /auth/github/callback`                      | Completes GitHub OAuth login.                                                  |
 | `GET /auth/github/install`                       | Redirects to GitHub App installation.                                          |
+| `POST /auth/demo/login`                          | Starts a limited public demo session.                                          |
 | `POST /github/webhook`                           | Receives GitHub App webhooks.                                                  |
 | `GET /v1/me`                                     | Current user.                                                                  |
 | `GET /v1/repos`                                  | Connected repositories.                                                        |
@@ -290,9 +293,9 @@ Default local URLs:
 | Dashboard | `http://localhost:5173`      |
 | OpenAPI   | `http://localhost:4000/docs` |
 
-### Local Demo Login
+### Local And Public Demo Login
 
-In development mode, `/auth/dev/login` seeds demo data and creates a local session. This route is disabled in production.
+`/auth/demo/login` seeds a limited reviewer session and is enabled by default. `/auth/dev/login` is available only in non-production environments for local development and is disabled in production.
 
 ## Running A GitHub App Integration
 
@@ -336,6 +339,7 @@ Useful optional variables:
 RUN_WORKER_IN_API=true
 MIGRATE_ON_STARTUP=true
 METRICS_TOKEN=<token required for /metrics in production>
+DEMO_LOGIN_ENABLED=true
 SCANNER_TIMEOUT_MS=120000
 SCANNER_MAX_OUTPUT_BYTES=200000
 ```
@@ -420,15 +424,14 @@ npm run test:load
 ## Example User Workflow
 
 1. Open the dashboard.
-2. Sign in with GitHub.
-3. Install the GitHub App on selected repositories.
-4. Select a repository in the sidebar.
-5. Adjust policy settings.
-6. Click `scan`.
-7. Review scan status and grouped findings.
-8. Add a webhook endpoint if external notification is needed.
-9. Review delivery history and replay failed deliveries when necessary.
-10. Use audit logs to trace scan and policy activity.
+2. Click `try demo` for a seeded reviewer session, or sign in with GitHub for a real repository connection.
+3. Select a repository in the sidebar.
+4. Adjust policy settings.
+5. Click `scan`.
+6. Review scan status and grouped findings.
+7. Add a webhook endpoint if external notification is needed.
+8. Review delivery history and replay failed deliveries when necessary.
+9. Use audit logs to trace scan and policy activity.
 
 ## Example Webhook Test
 

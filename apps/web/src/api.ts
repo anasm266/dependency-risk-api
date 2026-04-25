@@ -42,6 +42,10 @@ export function devLogin() {
   return api<{ user: User }>("/auth/dev/login", { method: "POST" });
 }
 
+export function demoLogin() {
+  return api<{ user: User }>("/auth/demo/login", { method: "POST" });
+}
+
 export function me() {
   return api<{ user: User }>("/v1/me");
 }

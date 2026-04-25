@@ -5,8 +5,16 @@ import { processNextJob } from "../src/worker.js";
 describe("worker", () => {
   it("processes a scan job and persists policy findings", async () => {
     const store = new MemoryStore();
-    const user = await store.seedDemoData();
-    const repo = (await store.listRepos(user.id, { limit: 1 })).items[0]!;
+    const { user } = await store.createSessionFromGitHub({
+      githubId: "worker-test-user",
+      login: "worker-test-user",
+    });
+    const repo = await store.upsertRepo({
+      fullName: "example/npm-app",
+      defaultBranch: "main",
+      private: false,
+      userId: user.id,
+    });
     const { scan } = await store.createScan({
       userId: user.id,
       repoId: repo.id,

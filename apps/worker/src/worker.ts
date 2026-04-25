@@ -3,6 +3,7 @@ import {
   groupFindings,
   highestSeverity,
   signHmacSha256,
+  type PolicyFinding,
   type ScannerFindingInput,
 } from "@sentinelflow/contracts";
 import { createSign } from "node:crypto";
@@ -84,6 +85,16 @@ async function processScanJob(job: JobRecord, deps: WorkerDeps) {
   if (!repo) {
     throw new Error("repo not found for scan job");
   }
+  const demoResult = demoScanResult(repo.fullName);
+  if (demoResult) {
+    await deps.store.finishScan({
+      scanId,
+      status: demoResult.status,
+      findings: demoResult.findings,
+      error: demoResult.error ?? null,
+    });
+    return;
+  }
   if (!deps.config.scanRepoAllowlist.has(repo.fullName)) {
     await deps.store.finishScan({
       scanId,
@@ -142,6 +153,92 @@ async function processScanJob(job: JobRecord, deps: WorkerDeps) {
     }
     throw error;
   }
+}
+
+function demoScanResult(repoFullName: string): {
+  status: "succeeded" | "failed" | "unsupported";
+  findings: PolicyFinding[];
+  error?: string | null;
+} | null {
+  if (repoFullName === "sentinelflow-demo/clean-npm-service") {
+    return {
+      status: "succeeded",
+      findings: [],
+    };
+  }
+  if (repoFullName === "sentinelflow-demo/pnpm-library") {
+    return {
+      status: "unsupported",
+      findings: [],
+      error:
+        "pnpm-lock.yaml detected; package-lock.json scanner is not available yet",
+    };
+  }
+  if (repoFullName !== "sentinelflow-demo/risky-npm-app") {
+    return null;
+  }
+  return {
+    status: "failed",
+    findings: [
+      {
+        ruleId: "lifecycle_script",
+        packageName: "esbuild",
+        packagePath: "vite/node_modules/esbuild",
+        packageVersion: "0.21.5",
+        evidence: {
+          path: "vite/node_modules/esbuild",
+          source: "package-lock.hasInstallScript",
+          optional: false,
+          dev: true,
+        },
+        severity: "high",
+        title: "esbuild runs npm lifecycle scripts",
+      },
+      {
+        ruleId: "new_risky_dependency",
+        packageName: "esbuild",
+        packagePath: "vite/node_modules/esbuild",
+        packageVersion: "0.21.5",
+        evidence: {
+          path: "vite/node_modules/esbuild",
+          sourceRuleId: "lifecycle_script",
+          reason: "requireApprovalForNewRiskyPackages",
+        },
+        severity: "medium",
+        title: "esbuild is a new risky dependency",
+      },
+      {
+        ruleId: "lifecycle_script",
+        packageName: "fsevents",
+        packagePath: "playwright/node_modules/fsevents",
+        packageVersion: "2.3.3",
+        evidence: {
+          path: "playwright/node_modules/fsevents",
+          source: "package-lock.hasInstallScript",
+          optional: true,
+          dev: true,
+          os: ["darwin"],
+        },
+        severity: "medium",
+        title: "fsevents runs npm lifecycle scripts",
+      },
+      {
+        ruleId: "new_risky_dependency",
+        packageName: "fsevents",
+        packagePath: "playwright/node_modules/fsevents",
+        packageVersion: "2.3.3",
+        evidence: {
+          path: "playwright/node_modules/fsevents",
+          optional: true,
+          os: ["darwin"],
+          sourceRuleId: "lifecycle_script",
+          reason: "requireApprovalForNewRiskyPackages",
+        },
+        severity: "medium",
+        title: "fsevents is a new risky dependency",
+      },
+    ],
+  };
 }
 
 async function processWebhookDelivery(job: JobRecord, deps: WorkerDeps) {

@@ -13,6 +13,8 @@ services:
         value: true
       - key: MIGRATE_ON_STARTUP
         value: true
+      - key: DEMO_LOGIN_ENABLED
+        value: true
       - key: DATABASE_URL
         sync: false
       - key: WEB_ORIGIN

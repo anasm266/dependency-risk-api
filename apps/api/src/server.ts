@@ -215,6 +215,21 @@ export async function buildApp(
     return { user: sessionResult.user };
   });
 
+  app.post("/auth/demo/login", async (_request, reply) => {
+    if (!config.demoLoginEnabled) {
+      sendProblem(reply, 404, "Not Found");
+      return;
+    }
+    const user = await store.seedDemoData();
+    const sessionResult = await store.createSessionFromGitHub({
+      githubId: user.githubId,
+      login: user.login,
+      avatarUrl: user.avatarUrl,
+    });
+    setSessionCookie(reply, sessionResult.session.id, config);
+    return { user: sessionResult.user };
+  });
+
   app.get("/auth/github/start", async (_request, reply) => {
     if (!config.githubClientId) {
       sendProblem(reply, 503, "GitHub OAuth is not configured");
@@ -410,7 +425,10 @@ export async function buildApp(
       sendProblem(reply, 404, "Repository not found");
       return;
     }
-    if (!config.scanRepoAllowlist.has(repo.fullName)) {
+    if (
+      !config.scanRepoAllowlist.has(repo.fullName) &&
+      !repo.fullName.startsWith("sentinelflow-demo/")
+    ) {
       sendProblem(reply, 403, "Repository is not allowlisted for scanning");
       return;
     }

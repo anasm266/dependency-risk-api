@@ -13,6 +13,7 @@ export interface ApiConfig {
   metricsToken: string | null;
   runWorkerInApi: boolean;
   migrateOnStartup: boolean;
+  demoLoginEnabled: boolean;
 }
 
 export function loadConfig(env = process.env): ApiConfig {
@@ -37,5 +38,6 @@ export function loadConfig(env = process.env): ApiConfig {
     metricsToken: env["METRICS_TOKEN"] ?? null,
     runWorkerInApi: env["RUN_WORKER_IN_API"] === "true",
     migrateOnStartup: env["MIGRATE_ON_STARTUP"] === "true",
+    demoLoginEnabled: env["DEMO_LOGIN_ENABLED"] !== "false",
   };
 }

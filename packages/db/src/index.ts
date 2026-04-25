@@ -181,6 +181,101 @@ export interface ListOptions {
   cursor?: string;
 }
 
+const demoProfile: GitHubProfile = {
+  githubId: "sentinelflow-demo",
+  login: "demo-reviewer",
+  avatarUrl: null,
+};
+
+const demoRepos = [
+  {
+    key: "clean",
+    fullName: "sentinelflow-demo/clean-npm-service",
+    defaultBranch: "main",
+    status: "succeeded" as const,
+    commitSha: "demo-clean-main",
+    findings: [] as PolicyFinding[],
+  },
+  {
+    key: "risky",
+    fullName: "sentinelflow-demo/risky-npm-app",
+    defaultBranch: "main",
+    status: "failed" as const,
+    commitSha: "demo-risky-main",
+    findings: [
+      {
+        ruleId: "lifecycle_script",
+        packageName: "esbuild",
+        packagePath: "vite/node_modules/esbuild",
+        packageVersion: "0.21.5",
+        evidence: {
+          path: "vite/node_modules/esbuild",
+          lockfilePath: "node_modules/vite/node_modules/esbuild",
+          source: "package-lock.hasInstallScript",
+          optional: false,
+          dev: true,
+        },
+        severity: "high" as const,
+        title: "esbuild runs npm lifecycle scripts",
+      },
+      {
+        ruleId: "new_risky_dependency",
+        packageName: "esbuild",
+        packagePath: "vite/node_modules/esbuild",
+        packageVersion: "0.21.5",
+        evidence: {
+          path: "vite/node_modules/esbuild",
+          sourceRuleId: "lifecycle_script",
+          reason: "requireApprovalForNewRiskyPackages",
+        },
+        severity: "medium" as const,
+        title: "esbuild is a new risky dependency",
+      },
+      {
+        ruleId: "lifecycle_script",
+        packageName: "fsevents",
+        packagePath: "playwright/node_modules/fsevents",
+        packageVersion: "2.3.3",
+        evidence: {
+          path: "playwright/node_modules/fsevents",
+          lockfilePath: "node_modules/playwright/node_modules/fsevents",
+          source: "package-lock.hasInstallScript",
+          optional: true,
+          dev: true,
+          os: ["darwin"],
+        },
+        severity: "medium" as const,
+        title: "fsevents runs npm lifecycle scripts",
+      },
+      {
+        ruleId: "new_risky_dependency",
+        packageName: "fsevents",
+        packagePath: "playwright/node_modules/fsevents",
+        packageVersion: "2.3.3",
+        evidence: {
+          path: "playwright/node_modules/fsevents",
+          optional: true,
+          os: ["darwin"],
+          sourceRuleId: "lifecycle_script",
+          reason: "requireApprovalForNewRiskyPackages",
+        },
+        severity: "medium" as const,
+        title: "fsevents is a new risky dependency",
+      },
+    ],
+  },
+  {
+    key: "unsupported",
+    fullName: "sentinelflow-demo/pnpm-library",
+    defaultBranch: "main",
+    status: "unsupported" as const,
+    commitSha: "demo-pnpm-main",
+    findings: [] as PolicyFinding[],
+    error:
+      "pnpm-lock.yaml detected; package-lock.json scanner is not available yet",
+  },
+];
+
 export class MemoryStore implements SentinelStore {
   readonly mode = "memory" as const;
   private users = new Map<string, UserRecord>();
@@ -218,26 +313,7 @@ export class MemoryStore implements SentinelStore {
   }
 
   async seedDemoData(): Promise<UserRecord> {
-    const { user } = await this.createSessionFromGitHub({
-      githubId: "dev-user",
-      login: "anasm266",
-      avatarUrl: null,
-    });
-
-    await this.upsertRepo({
-      fullName: "anasm266/installsentry",
-      defaultBranch: "master",
-      private: false,
-      userId: user.id,
-    });
-    await this.upsertRepo({
-      fullName: "anasm266/any-map",
-      defaultBranch: "main",
-      private: false,
-      userId: user.id,
-    });
-
-    return user;
+    return seedDemoFixture(this);
   }
 
   async createSessionFromGitHub(profile: GitHubProfile) {
@@ -795,24 +871,7 @@ export class PostgresStore implements SentinelStore {
   }
 
   async seedDemoData(): Promise<UserRecord> {
-    const { user } = await this.createSessionFromGitHub({
-      githubId: "dev-user",
-      login: "anasm266",
-      avatarUrl: null,
-    });
-    await this.upsertRepo({
-      fullName: "anasm266/installsentry",
-      defaultBranch: "master",
-      private: false,
-      userId: user.id,
-    });
-    await this.upsertRepo({
-      fullName: "anasm266/any-map",
-      defaultBranch: "main",
-      private: false,
-      userId: user.id,
-    });
-    return user;
+    return seedDemoFixture(this);
   }
 
   async createSessionFromGitHub(profile: GitHubProfile) {
@@ -1522,6 +1581,59 @@ export async function runMigrations(connectionString: string): Promise<void> {
     client.release();
     await pool.end();
   }
+}
+
+async function seedDemoFixture(
+  store: Pick<
+    SentinelStore,
+    | "createSessionFromGitHub"
+    | "upsertRepo"
+    | "createWebhookEndpoint"
+    | "listWebhookEndpoints"
+    | "createScan"
+    | "completeJob"
+    | "finishScan"
+  >,
+): Promise<UserRecord> {
+  const { user } = await store.createSessionFromGitHub(demoProfile);
+  const endpoints = await store.listWebhookEndpoints(user.id);
+  if (
+    !endpoints.some((endpoint) => endpoint.url === "https://httpbin.org/post")
+  ) {
+    await store.createWebhookEndpoint({
+      userId: user.id,
+      url: "https://httpbin.org/post",
+      description: "Public demo receiver",
+    });
+  }
+
+  for (const demoRepo of demoRepos) {
+    const repo = await store.upsertRepo({
+      fullName: demoRepo.fullName,
+      defaultBranch: demoRepo.defaultBranch,
+      private: false,
+      userId: user.id,
+    });
+    const result = await store.createScan({
+      userId: user.id,
+      repoId: repo.id,
+      source: "manual",
+      commitSha: demoRepo.commitSha,
+      reason: "seeded public demo",
+      idempotencyKey: `seed-${demoRepo.key}-v1`,
+    });
+    await store.completeJob(result.job.id);
+    if (!result.reused) {
+      await store.finishScan({
+        scanId: result.scan.id,
+        status: demoRepo.status,
+        findings: demoRepo.findings,
+        error: demoRepo.error ?? null,
+      });
+    }
+  }
+
+  return user;
 }
 
 function mapUser(row: Record<string, unknown>): UserRecord {

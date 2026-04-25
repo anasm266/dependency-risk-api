@@ -1,0 +1,26 @@
+{
+  "name": "@sentinelflow/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "tsx --conditions=source src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -b --pretty false",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.0.1",
+    "@fastify/cors": "^10.0.2",
+    "@fastify/helmet": "^13.0.1",
+    "@fastify/static": "^9.1.3",
+    "@fastify/swagger": "^9.4.0",
+    "@fastify/swagger-ui": "^5.2.0",
+    "@sentinelflow/contracts": "file:../../packages/contracts",
+    "@sentinelflow/db": "file:../../packages/db",
+    "@sentinelflow/worker": "file:../worker",
+    "fastify": "^5.2.1",
+    "tsx": "^4.19.2"
+  }
+}

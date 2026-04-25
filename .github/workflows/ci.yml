@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: sentinelflow
+          POSTGRES_PASSWORD: sentinelflow
+          POSTGRES_DB: sentinelflow
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sentinelflow -d sentinelflow"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+    env:
+      DATABASE_URL: postgres://sentinelflow:sentinelflow@localhost:5432/sentinelflow
+      SESSION_SECRET: ci-session-secret-32-bytes-minimum
+      GITHUB_WEBHOOK_SECRET: ci-webhook-secret
+      SCAN_REPO_ALLOWLIST: anasm266/installsentry,anasm266/any-map
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run db:migrate
+      - run: npm run typecheck
+      - run: npm test
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - run: npm run test:e2e

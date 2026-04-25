@@ -1,0 +1,29 @@
+{
+  "name": "@sentinelflow/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "source": "./src/worker.ts",
+      "types": "./dist/worker.d.ts",
+      "default": "./dist/worker.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "tsx --conditions=source src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -b --pretty false",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@sentinelflow/contracts": "file:../../packages/contracts",
+    "@sentinelflow/db": "file:../../packages/db",
+    "tar": "^7.4.3",
+    "tsx": "^4.19.2"
+  },
+  "devDependencies": {
+    "@types/tar": "^6.1.13"
+  }
+}

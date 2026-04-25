@@ -446,6 +446,7 @@ function Shell({ children, user }: { children: React.ReactNode; user?: User }) {
         </a>
         <nav>
           {user && <span className="muted">@{user.login}</span>}
+          <a href="/docs">api docs</a>
           <a href="https://github.com/anasm266/dependency-risk-api">github</a>
         </nav>
       </header>

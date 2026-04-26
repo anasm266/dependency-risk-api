@@ -16,14 +16,14 @@ In short: SentinelFlow answers the question, "Did this dependency change introdu
 - API docs: [sentinelflow-api.onrender.com/docs](https://sentinelflow-api.onrender.com/docs)
 - Related scanner: [anasm266/installsentry](https://github.com/anasm266/installsentry)
 
-## Why This Repo Is Worth Reviewing
+## Highlights
 
 - GitHub OAuth login, GitHub App installation flow, and webhook verification.
 - PostgreSQL-backed job queue using `FOR UPDATE SKIP LOCKED`.
 - Transactional outbox for reliable scan-completed webhook delivery.
 - Policy engine for lifecycle scripts, secret reads, network egress, risky package approval, and blast radius.
 - Dashboard views for grouped findings, audit logs, webhook endpoints, and delivery replay.
-- Unit, integration, browser, and load-test scaffolding around a real deployed demo.
+- Unit, integration, browser, and load-test coverage.
 
 ## Core Workflow
 
@@ -39,15 +39,15 @@ The hosted demo is available at [sentinelflow-api.onrender.com](https://sentinel
 
 API documentation is available at [sentinelflow-api.onrender.com/docs](https://sentinelflow-api.onrender.com/docs).
 
-The hosted demo uses a repository allowlist, so scans are limited to configured repositories. This keeps public demo usage controlled while still exercising the real GitHub, PostgreSQL, worker, policy, and webhook paths.
+The hosted demo uses a repository allowlist, so scans are limited to configured repositories. This keeps public usage controlled while still exercising the GitHub, PostgreSQL, worker, policy, and webhook paths.
 
-The dashboard includes a `try demo` button. Demo mode creates a limited session with seeded sample repositories, scan results, findings, audit logs, a webhook endpoint, and delivery history. It is intended for reviewers who want to evaluate the product without installing the GitHub App.
+The dashboard includes a `try demo` button. Demo mode creates a limited session with seeded sample repositories, scan results, findings, audit logs, a webhook endpoint, and delivery history without requiring a GitHub App installation.
 
 ## Why This Exists
 
 Modern npm projects routinely install hundreds or thousands of transitive packages. A package can run code during installation through lifecycle scripts such as `install`, `preinstall`, or `postinstall`. That behavior is legitimate for some packages, but it is also a common path for supply-chain attacks because install scripts execute before application code is ever imported.
 
-SentinelFlow treats dependency changes as a backend security workflow rather than a static report. It combines policy evaluation, durable jobs, persistence, auditability, GitHub integration, and webhook delivery so the result resembles the kind of system used in production engineering organizations.
+SentinelFlow treats dependency changes as a backend security workflow rather than a static report. It combines policy evaluation, durable jobs, persistence, auditability, GitHub integration, and webhook delivery so teams can gate and trace dependency risk with a single system.
 
 ## Current Capabilities
 
@@ -158,7 +158,7 @@ k6/
 
 ### Fastify Instead Of Serverless Workers
 
-SentinelFlow uses Fastify to demonstrate conventional backend API structure: middleware, cookies, CORS, secure headers, structured routes, error handling, request IDs, OpenAPI, and testable server composition. This intentionally exercises backend-framework fundamentals instead of relying on an edge-only request handler.
+SentinelFlow uses Fastify for conventional backend API structure: middleware, cookies, CORS, secure headers, structured routes, error handling, request IDs, OpenAPI, and testable server composition instead of relying on an edge-only request handler.
 
 ### PostgreSQL As The System Of Record
 
@@ -308,7 +308,7 @@ Default local URLs:
 
 ### Local And Public Demo Login
 
-`/auth/demo/login` seeds a limited reviewer session and is enabled by default. `/auth/dev/login` is available only in non-production environments for local development and is disabled in production.
+`/auth/demo/login` seeds a limited demo session and is enabled by default. `/auth/dev/login` is available only in non-production environments for local development and is disabled in production.
 
 ## Running A GitHub App Integration
 
@@ -372,7 +372,7 @@ RUN_WORKER_IN_API=true
 MIGRATE_ON_STARTUP=true
 ```
 
-This is useful for a small hosted demo and free-tier deployment. A production deployment should split the API and worker into separate services so web requests and background scans scale independently.
+This is useful for a small hosted deployment. A production deployment should split the API and worker into separate services so web requests and background scans scale independently.
 
 Recommended hosted components:
 
@@ -434,10 +434,10 @@ Run load smoke test when k6 is installed:
 npm run test:load
 ```
 
-## Example User Workflow
+## Typical Workflow
 
 1. Open the dashboard.
-2. Click `try demo` for a seeded reviewer session, or sign in with GitHub for a real repository connection.
+2. Click `try demo` for a seeded demo session, or sign in with GitHub for a real repository connection.
 3. Select a repository in the sidebar.
 4. Adjust policy settings.
 5. Click `scan`.
@@ -479,7 +479,7 @@ After adding the endpoint and running a scan, the deliveries table should show a
 
 - The scanner currently supports npm `package-lock.json` repositories. Repositories using only `pnpm-lock.yaml`, `yarn.lock`, Cargo, Poetry, Maven, or other lockfile formats are marked `unsupported`.
 - Hosted public scanning is intentionally restricted by `SCAN_REPO_ALLOWLIST`.
-- The free-tier single-service deployment is suitable for demonstration, not sustained production traffic.
+- The free-tier single-service deployment is suitable for small-scale use, not sustained production traffic.
 - InstallSentry is consumed through a CLI adapter in this version rather than refactored into a library.
 - The dashboard is intentionally simple and backend-focused.
 
@@ -493,17 +493,3 @@ After adding the endpoint and running a scan, the deliveries table should show a
 - Add richer GitHub PR annotations.
 - Add repository onboarding for unsupported lockfiles.
 - Add a public sample-data mode for demos without GitHub installation.
-
-## Engineering Focus
-
-SentinelFlow is designed to demonstrate backend engineering depth:
-
-- Relational schema design and migrations.
-- GitHub App authentication and webhook verification.
-- Server-side sessions and authorization checks.
-- REST API design with OpenAPI.
-- Background processing and job locking.
-- Transactional outbox reliability.
-- Webhook delivery and replay.
-- Policy evaluation and normalized security findings.
-- Structured testing across units, integration, browser smoke tests, and load-test scaffolding.

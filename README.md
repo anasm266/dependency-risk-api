@@ -1,8 +1,33 @@
 # SentinelFlow
 
-SentinelFlow is a backend-focused supply-chain security control plane for GitHub repositories. It scans JavaScript dependency trees, evaluates install-time risk against configurable policies, stores audit evidence, and can notify external systems through signed webhooks.
+> Supply-chain risk control plane for GitHub repositories.
 
-The product is built around a common security workflow:
+[![CI](https://github.com/anasm266/dependency-risk-api/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/anasm266/dependency-risk-api/actions/workflows/ci.yml)
+[![Node.js](https://img.shields.io/badge/node-22%2B-339933)](https://nodejs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-blue)](https://www.typescriptlang.org/)
+
+`dependency-risk-api` is the repository slug. **SentinelFlow** is the product name shown in the app, API docs, and hosted demo.
+
+SentinelFlow is a backend-focused monorepo for dependency and supply-chain risk analysis. It combines a Fastify API, a background worker, a React dashboard, PostgreSQL-backed jobs, policy evaluation, audit logging, GitHub checks, and signed webhook delivery so dependency changes can be reviewed like a real production security workflow.
+
+In short: SentinelFlow answers the question, "Did this dependency change introduce install-time behavior that should block or require review?"
+
+## Quick Links
+
+- Live demo: [sentinelflow-api.onrender.com](https://sentinelflow-api.onrender.com)
+- API docs: [sentinelflow-api.onrender.com/docs](https://sentinelflow-api.onrender.com/docs)
+- Related scanner: [anasm266/installsentry](https://github.com/anasm266/installsentry)
+
+## Why This Repo Is Worth Reviewing
+
+- GitHub OAuth login, GitHub App installation flow, and webhook verification.
+- PostgreSQL-backed job queue using `FOR UPDATE SKIP LOCKED`.
+- Transactional outbox for reliable scan-completed webhook delivery.
+- Policy engine for lifecycle scripts, secret reads, network egress, risky package approval, and blast radius.
+- Dashboard views for grouped findings, audit logs, webhook endpoints, and delivery replay.
+- Unit, integration, browser, and load-test scaffolding around a real deployed demo.
+
+## Core Workflow
 
 1. A repository is connected through a GitHub App.
 2. A scan is queued for a branch, commit, or pull request.
@@ -10,21 +35,11 @@ The product is built around a common security workflow:
 4. A policy engine decides whether the dependency state passes or needs review.
 5. Results are persisted, displayed in the dashboard, written to audit logs, and optionally delivered to external webhook receivers.
 
-In short: SentinelFlow answers the question, "Did this dependency change introduce install-time behavior that should block or require review?"
-
 ## Live Demo
 
-The hosted demo is available at:
+The hosted demo is available at [sentinelflow-api.onrender.com](https://sentinelflow-api.onrender.com).
 
-```text
-https://sentinelflow-api.onrender.com
-```
-
-API documentation:
-
-```text
-https://sentinelflow-api.onrender.com/docs
-```
+API documentation is available at [sentinelflow-api.onrender.com/docs](https://sentinelflow-api.onrender.com/docs).
 
 The hosted demo uses a repository allowlist, so scans are limited to configured repositories. This keeps public demo usage controlled while still exercising the real GitHub, PostgreSQL, worker, policy, and webhook paths.
 

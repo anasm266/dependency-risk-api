@@ -2,11 +2,9 @@
 
 > Supply-chain risk control plane for GitHub repositories.
 
-[![CI](https://github.com/anasm266/dependency-risk-api/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/anasm266/dependency-risk-api/actions/workflows/ci.yml)
+[![CI](https://github.com/anasm266/sentinelflow/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/anasm266/sentinelflow/actions/workflows/ci.yml)
 [![Node.js](https://img.shields.io/badge/node-22%2B-339933)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-blue)](https://www.typescriptlang.org/)
-
-`dependency-risk-api` is the repository slug. **SentinelFlow** is the product name shown in the app, API docs, and hosted demo.
 
 SentinelFlow is a backend-focused monorepo for dependency and supply-chain risk analysis. It combines a Fastify API, a background worker, a React dashboard, PostgreSQL-backed jobs, policy evaluation, audit logging, GitHub checks, and signed webhook delivery so dependency changes can be reviewed like a real production security workflow.
 
